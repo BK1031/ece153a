@@ -163,12 +163,17 @@ Cache Disabled: 6.57, 6.85, 6.73, 6.73, 6.63, 7.12, 7.17, 6.97, 6.74, 6.95, 6.79
 
 **b)** Here's a valid schedule with an 8ms loop time.
 
+<img src="https://github.com/BK1031/ece153a/blob/main/hw1/2b.png?raw=true"/>
 
 
-**c)**
+**c)** The processor utility under this schedule would be (9/24) + (3/16) + (3/24) + (5/24) = 0.8558.
 
-**d)**
+**d)** With the above assumptions we get a utlility greater than 1, making it impossible.
 
-**e)**
+(9 / 10 (24/10) ) + (3 / 10 (18/10) ) + (3 / 10 (30/10) ) + (5 / 10 (30/10) ) = 1.016 (greater than 1)
 
-**f)**
+**e)** 
+
+**f)** The utility would be (9/20) + (3/20) + (3/20) + (5/20) = 1
+
+This 50Hz/10ms schedule has a higher utility than the 60Hz/8ms schedule.

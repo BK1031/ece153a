@@ -105,7 +105,7 @@ Expected Access Time: 6.87 cycles
 
 **c)** To find the worst case access time, I iterated through every single address in the address space and stored the longest access time.
 
-The worst case access time was 12 cycles.
+The worst case access time was 19 cycles.
 
 Here's my full code for this part:
 ```c
@@ -125,12 +125,24 @@ void part_c() {
 ```
 Output:
 ```
-Worst Case Access Time: 12 cycles
+Worst Case Access Time: 19 cycles
 ```
 
-**d)** I first modified the `NUM_SIMULATIONS` to be 1000 and then ran each previous part 24 times to get the data for the distributions. 
+**d)** I first modified the `NUM_SIMULATIONS` to be 1000 and then ran each previous part 24 times to get the data for the distributions.
 
+Here's the cdf graphs for the trials from part (a).
+<p align="middle">
+  <img src="https://github.com/BK1031/ece153a/blob/main/hw1/a_enabled_plot.png?raw=true" width="500" />
+  <img src="https://github.com/BK1031/ece153a/blob/main/hw1/a_disabled_plot.png?raw=true" width="500" />
+</p>
 
+Here's the cdf graphs for the trials from part (b).
+<p align="middle">
+  <img src="https://github.com/BK1031/ece153a/blob/main/hw1/b_enabled_plot.png?raw=true" width="500" />
+  <img src="https://github.com/BK1031/ece153a/blob/main/hw1/b_disabled_plot.png?raw=true" width="500" />
+</p>
+
+The fraction of time for which the memory access time is less than the worst case time is about 95%.
 
 In a real system, this would be hard to estimate since there can be so many factors outside your actual program that can affect the process of accessing some memory.
 
@@ -144,3 +156,19 @@ Cache Disabled: 12.00, 12.00, 12.00, 12.00, 12.00, 12.00, 12.00, 12.00, 12.00, 1
 Cache Enabled: 6.02, 6.49, 6.60, 6.58, 5.84, 6.53, 6.47, 6.67, 6.40, 6.54, 6.33, 6.78, 6.18, 6.54, 6.72, 5.82, 7.08, 6.65, 6.80, 6.17, 6.89, 6.63, 6.45, 6.65
 Cache Disabled: 6.57, 6.85, 6.73, 6.73, 6.63, 7.12, 7.17, 6.97, 6.74, 6.95, 6.79, 6.67, 6.76, 6.75, 6.58, 7.05, 7.26, 6.86, 6.98, 6.78, 7.12, 6.62, 6.97, 6.98
 ```
+
+## Q2
+
+**a)** The utility is equal to (9ms / 24ms) + (3ms / 18ms) + (3ms / 30 ms) + (5ms / 30ms) = 0.8083
+
+**b)** Here's a valid schedule with an 8ms loop time.
+
+
+
+**c)**
+
+**d)**
+
+**e)**
+
+**f)**

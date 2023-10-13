@@ -104,7 +104,7 @@ int main() {
 		timer_val_before = XTmrCtr_GetTimerCounterReg(XPAR_TMRCTR_0_BASEADDR, 1);
 
 		// Enter the line of Code to time.
-		intigeraAddition();
+		integerAddition();
 		
 		// REPEAT_40(Data = buffer[Addr]);
 
@@ -123,11 +123,52 @@ int main() {
 
 }
 
+// 5.1 - Timing of addition using integers
 void integerAddition() {
 	REPEAT_5(c = a + b);
 	// REPEAT_15(c = a + b);
 	// REPEAT_25(c = a + b);
 	// REPEAT_40(c = a + b);
+}
+
+// 5.2 - Timing of addition using floating point
+void floatAddition() {
+	REPEAT_5(f = d + e);
+	// REPEAT_15(f = d + e);
+	// REPEAT_25(f = d + e);
+	// REPEAT_40(f = d + e);
+}
+
+// 5.3 - Timing of writing the LEDs to turn on or off
+void writeLED() {
+	REPEAT_5(XGpio_DiscreteWrite(&Gpio, LED_CHANNEL, 0x1));
+	// REPEAT_15(XGpio_DiscreteWrite(&Gpio, LED_CHANNEL, 0x1));
+	// REPEAT_25(XGpio_DiscreteWrite(&Gpio, LED_CHANNEL, 0x1));
+	// REPEAT_40(XGpio_DiscreteWrite(&Gpio, LED_CHANNEL, 0x1));
+}
+
+// 5.4 - Timing of reading a word from the DDR2 memory at a random location
+void readDDR() {
+	REPEAT_5(Data = buffer[Addr]);
+	// REPEAT_15(Data = buffer[Addr]);
+	// REPEAT_25(Data = buffer[Addr]);
+	// REPEAT_40(Data = buffer[Addr]);
+}
+
+// 5.5 - Timing of writing to the USB Port (ONLY RUN MAIN LOOP 1000 TIMES)
+// (a) Write a floating point number using printf()
+void writeFloatUSB() {
+	REPEAT_5(printf("%f\n\r", 0.1));
+	// REPEAT_15(printf("%f\n\r", 0.1));
+	// REPEAT_25(printf("%f\n\r", 0.1));
+	// REPEAT_40(printf("%f\n\r", 0.1));
+}
+// (b) Write a string of 10 characters using xil printf()
+void writeStringUSB() {
+	REPEAT_5(xil_printf("helloworld\n\r"));
+	// REPEAT_15(xil_printf("helloworld\n\r"));
+	// REPEAT_25(xil_printf("helloworld\n\r"));
+	// REPEAT_40(xil_printf("helloworld\n\r"));
 }
 
 /*

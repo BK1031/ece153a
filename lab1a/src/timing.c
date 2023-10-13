@@ -60,6 +60,14 @@ u8 * BaseAddr = (u8 *) XPAR_MIG7SERIES_0_BASEADDR;
 #define REPEAT_25(X) REPEAT_20(X);REPEAT_5(X)
 #define REPEAT_40(X) REPEAT_15(X);REPEAT_25(X)
 
+int a = 3;
+int b = 4;
+int c;
+
+float d = 3.14;
+float e = 2.71;
+float f;
+
 int main() {
 	Xil_ICacheInvalidate();
 	Xil_ICacheEnable();
@@ -96,7 +104,7 @@ int main() {
 		timer_val_before = XTmrCtr_GetTimerCounterReg(XPAR_TMRCTR_0_BASEADDR, 1);
 
 		// Enter the line of Code to time.
-		int a = 0 + 1;
+		intigeraAddition();
 		
 		// REPEAT_40(Data = buffer[Addr]);
 
@@ -113,6 +121,13 @@ int main() {
 
 	histogram(); // Creates a histogram for the measured data
 
+}
+
+void integerAddition() {
+	REPEAT_5(c = a + b);
+	// REPEAT_15(c = a + b);
+	// REPEAT_25(c = a + b);
+	// REPEAT_40(c = a + b);
 }
 
 /*

@@ -96,7 +96,9 @@ int main() {
 		timer_val_before = XTmrCtr_GetTimerCounterReg(XPAR_TMRCTR_0_BASEADDR, 1);
 
 		// Enter the line of Code to time.
-		REPEAT_40(Data = buffer[Addr]);
+		int a = 0 + 1;
+		
+		// REPEAT_40(Data = buffer[Addr]);
 
 		// XGpio_DiscreteWrite(&Gpio, LED_CHANNEL, 0x1); // Turns on one LED
 

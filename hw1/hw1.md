@@ -172,7 +172,9 @@ Cache Disabled: 6.57, 6.85, 6.73, 6.73, 6.63, 7.12, 7.17, 6.97, 6.74, 6.95, 6.79
 
 (9 / 10 (24/10) ) + (3 / 10 (18/10) ) + (3 / 10 (30/10) ) + (5 / 10 (30/10) ) = 1.016 (greater than 1)
 
-**e)** 
+**e)** Here's a schedule that works for the new deadline of 20ms.
+
+<img src="https://github.com/BK1031/ece153a/blob/main/hw1/2e.png?raw=true"/>
 
 **f)** The utility would be (9/20) + (3/20) + (3/20) + (5/20) = 1
 

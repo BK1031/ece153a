@@ -68,6 +68,9 @@ float d = 3.14;
 float e = 2.71;
 float f;
 
+u32 Addr;
+volatile unsigned int Data;
+
 int main() {
 	Xil_ICacheInvalidate();
 	Xil_ICacheEnable();
@@ -76,8 +79,6 @@ int main() {
 	print("---Entering main---\n\r");
 	int i = 0;
 	int timer_val_before; // Used to store the timer value before executing the operation being timed
-	u32 Addr;
-	volatile unsigned int Data;
 
 	// Extra Method contains an interrupt routine which is set to go off at timed intervals
 	extra_method();
@@ -103,10 +104,6 @@ int main() {
 
 		// Enter the line of Code to time.
 		integerAddition();
-		
-		// REPEAT_40(Data = buffer[Addr]);
-
-		// XGpio_DiscreteWrite(&Gpio, LED_CHANNEL, 0x1); // Turns on one LED
 
 		numClockCycles[i] = XTmrCtr_GetTimerCounterReg(XPAR_TMRCTR_0_BASEADDR, 1) - timer_val_before; // Stores the time to execute the operation
 

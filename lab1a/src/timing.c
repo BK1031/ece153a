@@ -98,8 +98,6 @@ int main() {
 
 	for (i = 0; i < NUMBER_OF_TRIALS; i++) {
 
-		Addr = rand() % BUFFER_SIZE; // Will be used to access a random buffer index
-
 		// Store the timer value before executing the operation being timed
 		timer_val_before = XTmrCtr_GetTimerCounterReg(XPAR_TMRCTR_0_BASEADDR, 1);
 
@@ -149,6 +147,7 @@ void writeLED() {
 
 // 5.4 - Timing of reading a word from the DDR2 memory at a random location
 void readDDR() {
+	Addr = rand() % BUFFER_SIZE; // Will be used to access a random buffer index
 	REPEAT_5(Data = buffer[Addr]);
 	// REPEAT_15(Data = buffer[Addr]);
 	// REPEAT_25(Data = buffer[Addr]);

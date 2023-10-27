@@ -1,286 +1,245 @@
 #include <stdio.h>
-#include "platform.h"
-#include "xil_printf.h"
-#include "xparameters.h"
-#include "xgpio.h"
+#include "xil_cache.h"
 #include "xintc.h"
 #include "xtmrctr.h"
-#include "sleep.h"
+#include "xtmrctr_l.h"
+#include "xparameters.h"
+#include <xbasic_types.h>
+#include "xgpio.h"
+#include "xil_printf.h"
 
-#define BUTTON_DEBOUNCE_TIME 10000*1000
+#define RESET_VALUE 0x5F5E100 // 100*10^6 @ 100MHz = 1s
+#define ENCODER_CHANNEL 1
+#define LED_CHANNEL 1
 
-// 16 LED control
-XGpio per_leds;
 
-// RGB leds (2 of 'em)
-XGpio per_rgbleds;
+XTmrCtr sys_tmrctr; //timer
+XIntc sys_intctr;	//interrupt controller
+XGpio enc_gpio; //encoder gpio
+XGpio led_gpio; 	//16 LEDs
+XGpio rgb_led_gpio;	//RGB leds
 
-// Encoder
-XGpio per_encoder;
+unsigned int count = 0;	//count var for the timing loop
+static int encoder_count = 4;
+unsigned int toggle = 1;
+static Xuint16 state = 0b11;
+volatile u16 led_16 = 1;
 
-// Interrupt controller
-XIntc per_intc;
+static enum STATES {
+		S0 = 0b11,
+		S1 = 0b01,
+		S2 = 0b00,
+		S3 = 0b10
+};
 
-// Timer
-XTmrCtr per_timer;
-
-// [0-15]: which led to turn on
-volatile unsigned int led_num = 0;
-volatile unsigned int led_enable = 1;
-volatile unsigned int button_enable = 1;
-
-volatile unsigned int encoderState = 0;
-
-void moveLedLeft() {
-	led_num = (led_num + led_enable) % 16;
-}
-
-void moveLedRight() {
-	led_num = (led_num - led_enable) % 16;
-}
-
-void enableLed() {
-	led_enable = 1;
-}
-
-void disableLed() {
-	led_enable = 0;
-}
-
-void toggleLed() {
-	led_enable = !led_enable;
-}
-
-void dispLed() {
-	// which leds to turn on
-	u32 led_mask;
-
-	// make sure the leds are enabled
-	if (led_enable == 0) {
-		led_mask = 0;
+void LED_press(int toggle) {
+	if (toggle == 0) {
+		XGpio_DiscreteWrite(&led_gpio, LED_CHANNEL, 0x00);
 	} else {
-		led_mask = 1<<led_num;
-	}
-
-	XGpio_DiscreteWrite(&per_leds, 1, led_mask);
-}
-
-void updateState(u32 encoderData) {
-	u32 ab = encoderData & 0b11;
-
-	u32 button = encoderData & 0b100;
-
-	if (button && button_enable) {
-		toggleLed();
-		dispLed();
-
-		button_enable = 0;
-		XTmrCtr_Start(&per_timer, 0);
-		return;
-	}
-
-	switch(encoderState) {
-	case 0:
-		if        (ab == 0b01) {
-			encoderState = 1;
-		} else if (ab == 0b10) {
-			encoderState = 4;
-		}
-		break;
-	case 1:
-		if        (ab == 0b11) {
-			encoderState = 0;
-		} else if (ab == 0b00) {
-			encoderState = 2;
-		}
-		break;
-	case 2:
-		if        (ab == 0b01) {
-			encoderState = 1;
-		} else if (ab == 0b10) {
-			encoderState = 3;
-		}
-		break;
-	case 3:
-		if        (ab == 0b11) {
-			encoderState = 0;
-
-			// move clockwise
-			moveLedRight();
-			dispLed();
-		} else if (ab == 0b00) {
-			encoderState = 2;
-		}
-		break;
-	case 4:
-		if        (ab == 0b00) {
-			encoderState = 5;
-		} else if (ab == 0b11) {
-			encoderState = 0;
-		}
-		break;
-	case 5:
-		if        (ab == 0b01) {
-			encoderState = 6;
-		} else if (ab == 0b10) {
-			encoderState = 4;
-		}
-		break;
-	case 6:
-		if        (ab == 0b11) {
-			encoderState = 0;
-
-			// move counter clockwise
-			moveLedLeft();
-			dispLed();
-		} else if (ab == 0b00) {
-			encoderState = 5;
-		}
-		break;
+		XGpio_DiscreteWrite(&led_gpio, LED_CHANNEL, led_16);
 	}
 }
 
-void encoderHandler() {
-	u32 encoderData = XGpio_DiscreteRead(&per_encoder, 1);
-
-	// XGpio_DiscreteWrite(&per_leds, 1, encoderData & 0b11);
-
-	updateState(encoderData);
-
-	// mark interrupt as handled
-	XGpio_InterruptClear(&per_encoder, 0xFFFFFFFF);
+void led_blink() {
+	XGpio_DiscreteWrite(&rgb_led_gpio, LED_CHANNEL, 0x2);
+	for(count = 0; count < 5000000; count++);
+	XGpio_DiscreteWrite(&rgb_led_gpio, LED_CHANNEL, 0x0);
+	for(count = 0; count < 5000000; count++);
 }
 
-void timerHandler() {
-	// handler code
-	button_enable = 1;
-
-	// acknowledge that interrupt handled
-	u32 controlReg = XTimerCtr_ReadReg(per_timer.BaseAddress, 0, XTC_TCSR_OFFSET);
-	XTmrCtr_WriteReg(
-		per_timer.BaseAddress,
-		0,
-		XTC_TCSR_OFFSET,
-		controlReg | XTC_CSR_INT_OCCURED_MASK
-	);
+void left_overflow() {
+	if (led_16 == 0b1000000000000000) {
+		led_16 = 0b1;
+	} else {
+		led_16 = led_16 << 1;
+	}
+	XGpio_DiscreteWrite(&led_gpio, LED_CHANNEL, led_16);
 }
 
-void initPeripherals() {
-	// 16 leds
-	XGpio_Initialize(&per_leds, XPAR_LEDS_DEVICE_ID);
-
-	// 2 rgb leds
-	XGpio_Initialize(&per_rgbleds, XPAR_RGB_LED_DEVICE_ID);
-
-	// encoder
-	XGpio_Initialize(&per_encoder, XPAR_ENCODER_DEVICE_ID);
-
-	// interrupt controller
-	XIntc_Initialize(&per_intc, XPAR_MICROBLAZE_0_AXI_INTC_DEVICE_ID);
-
-	// timer
-	XTmrCtr_Initialize(&per_timer, XPAR_AXI_TIMER_0_DEVICE_ID);
+void right_overflow() {
+	if (led_16 == 0b1) {
+		led_16 = 0b1000000000000000;
+	} else {
+		led_16 = led_16 >> 1;
+	}
+	XGpio_DiscreteWrite(&led_gpio, LED_CHANNEL, led_16);
 }
 
-void registerInterruptHandlers() {
-	// register encoder handler
-	XIntc_Connect(
-		&per_intc,
-		XPAR_MICROBLAZE_0_AXI_INTC_ENCODER_IP2INTC_IRPT_INTR,
-		encoderHandler,
-		&per_encoder
-	);
+void timer_handler() {
+	Xuint32 ControlStatusReg;
+	ControlStatusReg = XTimerCtr_ReadReg(sys_tmrctr.BaseAddress, 0, XTC_TCSR_OFFSET);
+	XTmrCtr_WriteReg(sys_tmrctr.BaseAddress, 0, XTC_TCSR_OFFSET, ControlStatusReg |XTC_CSR_INT_OCCURED_MASK);
 
-	XIntc_Enable(&per_intc, XPAR_MICROBLAZE_0_AXI_INTC_ENCODER_IP2INTC_IRPT_INTR);
-
-	// register timer handler
-	XIntc_Connect(
-		&per_intc,
-		XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_0_INTERRUPT_INTR,
-		timerHandler,
-		&per_timer
-	);
-
-	XIntc_Enable(&per_intc, XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_0_INTERRUPT_INTR);
 }
 
-void finishInterruptEnable() {
-	XIntc_Start(&per_intc, XIN_REAL_MODE);
+void enc_handler(void *CallbackRef) {
+	XGpio *GpioPtr = (XGpio *)CallbackRef;
 
-	// set up the encoder
-	XGpio_InterruptEnable(&per_encoder, 1);
-	XGpio_InterruptGlobalEnable(&per_encoder);
+	Xuint32 encoderStatus = 0;
 
-	XGpio_SetDataDirection(&per_encoder, 1, 0xFFFFFFFF);
+	Xuint32 start = XTmrCtr_GetTimerCounterReg(sys_tmrctr.BaseAddress, 0);
+	Xuint32 finish = start;
 
-	// set up the timer
-	XTmrCtr_SetOptions(
-		&per_timer,
-		0,
-		XTC_INT_MODE_OPTION
-	);
+	while (finish < (start + RESET_VALUE/10000)) {
+		finish = XTmrCtr_GetTimerCounterReg(sys_tmrctr.BaseAddress, 0);
+	}
 
-	// timer time
-	XTmrCtr_SetResetValue(&per_timer, 0, 0xFFFFFFFF-BUTTON_DEBOUNCE_TIME);
+	encoderStatus = XGpio_DiscreteRead(&enc_gpio, ENCODER_CHANNEL);
 
-	// connect interrupt controller to microblaze
-	microblaze_register_handler(
-			(XInterruptHandler)XIntc_DeviceInterruptHandler,
-		(void*)XPAR_MICROBLAZE_0_AXI_INTC_DEVICE_ID
-	);
+	if (encoderStatus == 7) {
+		toggle = !toggle;
+		state = S0;
+		encoder_count = 4;
+		LED_press(toggle);
+	}
+
+	switch (state) {
+
+		case S0: {
+			if (toggle == 1) {
+				if (encoder_count == 8 || encoder_count == 0) {
+					encoder_count = 4;
+				}
+			}
+			switch(encoderStatus) {
+				case 0b01: {
+					if(encoder_count == 4) {
+						encoder_count = encoder_count + 1;
+						state = S1;
+					}
+					break;
+				}
+				case 0b10: {
+					if(encoder_count == 4) {
+						encoder_count = encoder_count - 1;
+						state = S3;
+					}
+					break;
+				}
+				break;
+			}
+			break;
+		}
+
+		case S1: {
+			switch(encoderStatus) {
+				case 0b11: {
+					if(encoder_count == 1) {
+						encoder_count = encoder_count - 1;
+						state = S0;
+						if (toggle == 1) {
+							left_overflow();
+						}
+					}
+					break;
+				}
+				case 0b00: {
+					if(encoder_count == 5) {
+						encoder_count = encoder_count + 1;
+						state = S2;
+					}
+					break;
+				}
+				break;
+			}
+			break;
+		}
+
+		case S2: {
+			switch(encoderStatus) {
+				case 0b01: {
+					if (encoder_count == 2) {
+						encoder_count = encoder_count - 1;
+						state = S1;
+					}
+					break;
+				}
+				case 0b10: {
+					if (encoder_count == 6) {
+						encoder_count = encoder_count + 1;
+						state = S3;
+					}
+					break;
+				}
+				break;
+			}
+			break;
+		}
+
+		case S3: {
+			switch(encoderStatus) {
+				case 0b00: {
+					if(encoder_count == 3) {
+						encoder_count = encoder_count - 1;
+						state = S2;
+					}
+					break;
+				}
+				case 0b11: {
+					if(encoder_count == 7) {
+						encoder_count = encoder_count + 1;
+						state = S0;
+						if (toggle == 1) {
+							right_overflow();
+						}
+					}
+					break;
+				}
+				break;
+			}
+			break;
+		}
+		break;
+	}
+	XGpio_InterruptClear(GpioPtr, ENCODER_CHANNEL);
+}
+
+
+int initialization() {
+	XStatus Status;
+	Status = XST_SUCCESS;
+
+	Status = XIntc_Initialize(&sys_intctr, XPAR_INTC_0_DEVICE_ID);
+	Status = XIntc_Connect(&sys_intctr, XPAR_INTC_0_TMRCTR_0_VEC_ID, (XInterruptHandler)timer_handler, &sys_tmrctr);
+	Status = XIntc_Start(&sys_intctr, XIN_REAL_MODE);
+	XIntc_Enable(&sys_intctr, XPAR_INTC_0_TMRCTR_0_VEC_ID);
+
+	Status = XTmrCtr_Initialize(&sys_tmrctr, XPAR_INTC_0_DEVICE_ID);
+	XTmrCtr_SetOptions(&sys_tmrctr, 0, XTC_INT_MODE_OPTION | XTC_AUTO_RELOAD_OPTION);
+	XTmrCtr_SetResetValue(&sys_tmrctr, 0, 0xFFFFFFFF-RESET_VALUE);
+	XTmrCtr_Start(&sys_tmrctr, 0);
+
+	Status = XGpio_Initialize(&led_gpio, XPAR_AXI_GPIO_LED_DEVICE_ID);
+	Status = XGpio_Initialize(&rgb_led_gpio, XPAR_AXI_GPIO_RGBLEDS_DEVICE_ID);
+
+	Status = XGpio_Initialize(&enc_gpio, XPAR_AXI_GPIO_ENCODER_DEVICE_ID);
+	XIntc_Connect(&sys_intctr, XPAR_MICROBLAZE_0_AXI_INTC_AXI_GPIO_ENCODER_IP2INTC_IRPT_INTR, (Xil_ExceptionHandler)enc_handler, &enc_gpio);
+
+	XIntc_Enable(&sys_intctr, XPAR_MICROBLAZE_0_AXI_INTC_AXI_GPIO_ENCODER_IP2INTC_IRPT_INTR);
+
+	Status = XIntc_Start(&sys_intctr, XIN_REAL_MODE);
+	XGpio_InterruptEnable(&enc_gpio, ENCODER_CHANNEL);
+	XGpio_InterruptGlobalEnable(&enc_gpio);
+
+	microblaze_register_handler((XInterruptHandler)XIntc_DeviceInterruptHandler, (void*)XPAR_MICROBLAZE_0_AXI_INTC_DEVICE_ID);
 
 	microblaze_enable_interrupts();
-}
-
-void testLeds() {
-	for (int i = 0; i < 20; i++) {
-		dispLed();
-		moveLedLeft();
-		usleep(2000);
-	}
-	for (int i = 0; i < 20; i++) {
-		dispLed();
-		moveLedRight();
-		usleep(2000);
-	}
-	dispLed();
-
-	disableLed();
-	dispLed();
-	usleep(20000);
-
-	for (int i = 0; i < 5; i++) {
-		moveLedLeft();
-	}
-
-	enableLed();
-	dispLed();
-}
-
-void blinkRGBLeds() {
-	while (1) {
-		XGpio_DiscreteWrite(&per_rgbleds, 1, 0b010000);
-		usleep(10000);
-		XGpio_DiscreteWrite(&per_rgbleds, 1, 0b000000);
-		usleep(10000);
-	}
+	return Status;
 }
 
 int main() {
-	print("Starting\n");
-    init_platform();
-    initPeripherals();
-    registerInterruptHandlers();
-    finishInterruptEnable();
+	Xil_ICacheInvalidate();
+	Xil_ICacheEnable();
+	Xil_DCacheInvalidate();
+	Xil_DCacheEnable();
 
-    print("Enabled Interrupts\n");
+    initialization();
 
-    //testLeds();
-    dispLed();
+    XGpio_DiscreteWrite(&led_gpio, LED_CHANNEL, 1 << led_16);
 
-    // start infinite loop of blinking leds
-    blinkRGBLeds();
+    while(1) {
+    	led_blink();
+    }
 
-    cleanup_platform();
-    return 0;
+    return XST_SUCCESS;
 }

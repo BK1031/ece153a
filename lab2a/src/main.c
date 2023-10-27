@@ -13,13 +13,15 @@
 #define LED_CHANNEL 1
 
 
-XTmrCtr sys_tmrctr; //timer
-XIntc sys_intctr;	//interrupt controller
-XGpio enc_gpio; //encoder gpio
-XGpio led_gpio; 	//16 LEDs
-XGpio rgb_led_gpio;	//RGB leds
+XTmrCtr sys_tmrctr;
+XIntc sys_intctr;
+XGpio enc_gpio;
+XGpio led_gpio;
+XGpio rgb_led_gpio;
 
-unsigned int count = 0;	//count var for the timing loop
+// count variable just used for the led blink
+unsigned int count = 0;
+
 static int encoder_count = 4;
 unsigned int toggle = 1;
 static Xuint16 state = 0b11;

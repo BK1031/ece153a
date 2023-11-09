@@ -9,7 +9,12 @@
 enum Lab2ASignals {
 	ENCODER_UP = Q_USER_SIG,
 	ENCODER_DOWN,
-	ENCODER_CLICK
+	ENCODER_CLICK,
+	BTNU,
+	BTND,
+	BTNC,
+	BTNL,
+	BTNR
 };
 
 
@@ -20,4 +25,4 @@ void Lab2A_ctor(void);
 void GpioHandler(void *CallbackRef);
 void TwistHandler(void *CallbackRef);
 
-#endif  
+#endif

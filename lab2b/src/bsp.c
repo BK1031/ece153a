@@ -4,17 +4,60 @@
 *****************************************************************************/
 
 /**/
+#include <stdio.h>
+#include <math.h>
 #include "qpn_port.h"
 #include "bsp.h"
 #include "lab2a.h"
 #include "xintc.h"
 #include "xil_exception.h"
+#include "xparameters.h"
+#include "xil_cache.h"
+#include "xtmrctr.h"
+#include "xtmrctr_l.h"
+#include "xil_printf.h"
+#include "xgpio.h"
+#include "xspi.h"
+#include "xspi_l.h"
+#include "lcd.h"
 
 /*****************************/
 
 /* Define all variables and Gpio objects here  */
 
+XIntc sys_intctr;
+XGpio enc_gpio;
+XGpio twist_Gpio;
+XGpio led_gpio;
+XGpio rgb_led_gpio;
+XTmrCtr sys_tmrctr;
+XGpio dc;
+XSpi spi;
+XGpio btn;
+
+#define RESET_VALUE 0x5F5E100
 #define GPIO_CHANNEL1 1
+#define LED_CHANNEL 1
+#define BUTTON_CHANNEL 1
+
+int toggle = 1;
+int NumOfTri = 0;
+int volume = 0;
+int count = 0;
+int TimerFlag = 0;
+int EncTrig = 0;
+static int encoder_count = 4;
+static Xuint16 state = 0b11;
+volatile u16 led_16 = 1;
+int VolumeTimeOut = 0;
+int TextTimeOut = 0;
+
+static enum STATES {
+		S0 = 0b11,
+		S1 = 0b01,
+		S2 = 0b00,
+		S3 = 0b10
+};
 
 void debounceInterrupt(); // Write This function
 
@@ -23,6 +66,42 @@ void debounceInterrupt(); // Write This function
 // Suggest Creating two int's to use for determining the direction of twist
 
 /*..........................................................................*/
+
+/* ----- New Timer Handler ----- */
+void TimerCounterHandler(void *CallBackRef)
+{
+	if (MainVolumeFlag == 1) {
+	if (VolumeFlag == 1) {
+		setColor(0, 255, 0);
+		fillRect(70, 90, act_volume+70, 110);
+		VolumeTimeOut = 0;
+		VolumeFlag = 0;
+	}
+	if (VolumeTimeOut > 3069) {
+		printf("Timed Out");
+//		setColor(0, 0, 0);
+//		fillRect(70, 90, 170, 110);
+		TIMER_AQUABLUE();
+		MainVolumeFlag = 0;
+	}
+	VolumeTimeOut++;
+	}
+
+	if (MainTextFlag == 1) {
+		if (TextFlag == 1) {
+			TextTimeOut = 0;
+			TextFlag = 0;
+		}
+		if (TextTimeOut > 3069) {
+			printf("Timed Out");
+			RETEXT();
+			MainTextFlag = 0;
+		}
+		TextTimeOut++;
+	}
+}
+
+
 void BSP_init(void) {
 /* Setup LED's, etc */
 /* Setup interrupts and reference to interrupt handler function(s)  */
@@ -34,10 +113,72 @@ void BSP_init(void) {
 	 * Initialize GPIO and connect the interrupt controller to the GPIO.
 	 *
 	 */
+	XStatus Status;
+	Status = XST_SUCCESS;
+	u32 status;
+	u32 controlReg;
+	XSpi_Config *spiConfig;
 
-	// Press Knob
+	/* ----- Initialize Interrupt ----- */
+	Status = XIntc_Initialize(&sys_intctr, XPAR_INTC_0_DEVICE_ID);
 
-	// Twist Knob
+	/* ----- Initialize LED ----- */
+	Status = XGpio_Initialize(&led_gpio, XPAR_AXI_GPIO_LED_DEVICE_ID);
+
+	/* ----- Initialize RGB LED ----- */
+	Status = XGpio_Initialize(&rgb_led_gpio, XPAR_AXI_GPIO_RGBLEDS_DEVICE_ID);
+
+	/* ----- Initialize ENCODER ----- */
+	Status = XGpio_Initialize(&enc_gpio, XPAR_AXI_GPIO_ENCODER_DEVICE_ID);
+
+	XIntc_Connect(&sys_intctr, XPAR_MICROBLAZE_0_AXI_INTC_AXI_GPIO_ENCODER_IP2INTC_IRPT_INTR,
+			(Xil_ExceptionHandler)TwistHandler, &enc_gpio);
+	XIntc_Enable(&sys_intctr, XPAR_MICROBLAZE_0_AXI_INTC_AXI_GPIO_ENCODER_IP2INTC_IRPT_INTR);
+	Status = XIntc_Start(&sys_intctr, XIN_REAL_MODE);
+	XGpio_InterruptEnable(&enc_gpio, GPIO_CHANNEL1);
+	XGpio_InterruptGlobalEnable(&enc_gpio);
+
+	Status = XGpio_Initialize(&btn, XPAR_AXI_GPIO_BTN_DEVICE_ID);
+
+	XIntc_Connect(&sys_intctr, XPAR_INTC_0_GPIO_1_VEC_ID,
+			(Xil_ExceptionHandler)GpioHandler, &btn);
+	XIntc_Enable(&sys_intctr, XPAR_INTC_0_GPIO_1_VEC_ID);
+	Status = XIntc_Start(&sys_intctr, XIN_REAL_MODE);
+	XGpio_InterruptEnable(&btn, BUTTON_CHANNEL);
+	XGpio_InterruptGlobalEnable(&btn);
+
+	/* ----- New Timer Setup ----- */
+	Status = XTmrCtr_Initialize(&sys_tmrctr, XPAR_AXI_TIMER_0_DEVICE_ID);
+	Status = XIntc_Initialize(&sys_intctr, XPAR_INTC_0_DEVICE_ID);
+	Status = XIntc_Connect(&sys_intctr, XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_0_INTERRUPT_INTR,
+				(XInterruptHandler)XTmrCtr_InterruptHandler,
+				(void *)&sys_tmrctr);
+	Status = XIntc_Start(&sys_intctr, XIN_REAL_MODE);
+	XIntc_Enable(&sys_intctr, XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_0_INTERRUPT_INTR);
+				microblaze_enable_interrupts();
+	XTmrCtr_SetHandler(&sys_tmrctr, TimerCounterHandler, &sys_tmrctr);
+	XTmrCtr_SetOptions(&sys_tmrctr, 0,
+				XTC_INT_MODE_OPTION | XTC_AUTO_RELOAD_OPTION);
+	XTmrCtr_SetResetValue(&sys_tmrctr, 0, 0xFFFF0000);
+	XTmrCtr_Start(&sys_tmrctr, 0);
+
+
+
+	status = XGpio_Initialize(&dc, XPAR_SPI_DC_DEVICE_ID);
+	XGpio_SetDataDirection(&dc, 1, 0x0);
+	spiConfig = XSpi_LookupConfig(XPAR_SPI_DEVICE_ID);
+	status = XSpi_CfgInitialize(&spi, spiConfig, spiConfig->BaseAddress);
+	XSpi_Reset(&spi);
+	controlReg = XSpi_GetControlReg(&spi);
+	XSpi_SetControlReg(&spi,
+			(controlReg | XSP_CR_ENABLE_MASK | XSP_CR_MASTER_MODE_MASK) &
+			(~XSP_CR_TRANS_INHIBIT_MASK));
+	XSpi_SetSlaveSelectReg(&spi, ~0x01);
+
+	/* ----- Initialize MICROBLAZE ----- */
+	microblaze_register_handler((XInterruptHandler)XIntc_DeviceInterruptHandler,
+			(void*)XPAR_MICROBLAZE_0_AXI_INTC_DEVICE_ID);
+	microblaze_enable_interrupts();
 		
 }
 /*..........................................................................*/
@@ -45,6 +186,10 @@ void QF_onStartup(void) {                 /* entered with interrupts locked */
 
 /* Enable interrupts */
 	xil_printf("\n\rQF_onStartup\n"); // Comment out once you are in your complete program
+
+	initLCD();
+	clrScr();
+	AQUABLUE();
 
 	// Press Knob
 	// Enable interrupt controller
@@ -81,6 +226,80 @@ void QF_onStartup(void) {                 /* entered with interrupts locked */
 //		u32 gpioTestISR  = Xil_In32(sw_Gpio.BaseAddress  + XGPIO_ISR_OFFSET ) & 0x00000003; // & 0xMASK
 //		u32 gpioTestGIER = Xil_In32(sw_Gpio.BaseAddress  + XGPIO_GIE_OFFSET ) & 0x80000000; // & 0xMASK
 //	}
+}
+
+void DrawBorder() {
+	for (int width = 0; width<6;width++) {
+		drawHLine(0, width, DISP_X_SIZE);
+		drawHLine(0, DISP_Y_SIZE-width-10, DISP_X_SIZE);
+		drawVLine(width, 0, DISP_Y_SIZE);
+		drawVLine(DISP_X_SIZE-width, 0, DISP_Y_SIZE);
+	}
+}
+
+void AQUABLUE() {
+	clrScr();
+	for (int Row = 0; Row<8; Row++) {
+		int NewRow = Row*40;
+		for (int Col = 0; Col<6; Col++) {
+			int NewCol = Col*40;
+			for (int y = 0; y<40; y++) {
+				int blue = 2*ceil(y/2);
+				setColor(0,255,255);
+				drawHLine(0+NewCol, y+NewRow, 20-(blue/2));
+				setColor(0, 0, 255);
+				drawHLine(20-(blue/2)+NewCol, y+NewRow, blue);
+				setColor(0,255,255);
+				drawHLine(20+(blue/2)+NewCol, y+NewRow, 20-(blue/2));
+
+			}
+		}
+	}
+//	setColor(0, 255, 0);
+//	setColorBg(0, 0, 0);
+//	setFont(BigFont);
+//	lcdPrint("VOLUME", 73, 50);
+}
+
+void TIMER_AQUABLUE() {
+//	clrScr();
+	for (int Row = 0; Row<4; Row++) {
+		int NewRow = Row*40;
+		for (int Col = 0; Col<6; Col++) {
+			int NewCol = Col*40;
+			for (int y = 0; y<40; y++) {
+				int blue = 2*ceil(y/2);
+				setColor(0,255,255);
+				drawHLine(0+NewCol, y+NewRow, 20-(blue/2));
+				setColor(0, 0, 255);
+				drawHLine(20-(blue/2)+NewCol, y+NewRow, blue);
+				setColor(0,255,255);
+				drawHLine(20+(blue/2)+NewCol, y+NewRow, 20-(blue/2));
+
+			}
+		}
+	}
+//	setColor(0, 255, 0);
+//	setColorBg(0, 0, 0);
+//	setFont(BigFont);
+//	lcdPrint("VOLUME", 73, 50);
+}
+
+void RETEXT() {
+//	setColor(0, 0, 0);
+//	setColorBg(0, 0, 0);
+//	setFont(SmallFont);
+//	lcdPrint("AAAAAAA", 100, 140);
+}
+
+void TEXTTIMER() {
+	TimerFlag = 0;
+	for(count = 0; count < 10000000; count++) {
+		if (TimerFlag == 1) {
+			return;
+		}
+	}
+	AQUABLUE();
 }
 
 
@@ -143,11 +362,164 @@ Where the Signals are defined in lab2a.h  */
 ******************************************************************************/
 void GpioHandler(void *CallbackRef) {
 	// Increment A counter
+	XGpio *GpioPtr = (XGpio *)CallbackRef;
+
+	XGpio_InterruptClear(GpioPtr, BUTTON_CHANNEL);	// Clearing interrupt
+
+	Xuint32 start = XTmrCtr_GetTimerCounterReg(sys_tmrctr.BaseAddress, 0);
+	Xuint32 finish = start;
+
+	while (finish < (start + RESET_VALUE/10000)) {
+		finish = XTmrCtr_GetTimerCounterReg(sys_tmrctr.BaseAddress, 0);
+	}
+
+	Xuint32 ButtonPressStatus = 0;
+	ButtonPressStatus = XGpio_DiscreteRead(&btn, BUTTON_CHANNEL); // Check GPIO output
+	if (ButtonPressStatus == 0x04) {
+		//RIGHT
+		print("Button Pressed");
+		//TimerFlag = 1;
+		QActive_postISR((QActive *)&AO_Lab2A, BTNR);
+	}
+	else if (ButtonPressStatus == 0x02) {
+		//LEFT
+		print("Button Pressed");
+		//TimerFlag = 1;
+		QActive_postISR((QActive *)&AO_Lab2A, BTNL);
+	}
+	else if (ButtonPressStatus == 0x10) {
+		//CENTER
+		print("Button Pressed");
+		//TimerFlag = 1;
+		QActive_postISR((QActive *)&AO_Lab2A, BTNC);
+	}
+	else if (ButtonPressStatus == 0x01) {
+		//Up
+		print("Button Pressed");
+		//TimerFlag = 1;
+		QActive_postISR((QActive *)&AO_Lab2A, BTNU);
+	}
+	else if (ButtonPressStatus == 0x08) {
+		//Down
+		print("Button Pressed");
+		//TimerFlag = 1;
+		QActive_postISR((QActive *)&AO_Lab2A, BTND);
+	}
 }
 
 void TwistHandler(void *CallbackRef) {
 	//XGpio_DiscreteRead( &twist_Gpio, 1);
+	XGpio *GpioPtr = (XGpio *)CallbackRef;
+	Xuint32 encoderStatus = 0;
 
+	Xuint32 start = XTmrCtr_GetTimerCounterReg(sys_tmrctr.BaseAddress, 0);
+	Xuint32 finish = start;
+
+	while (finish < (start + RESET_VALUE/10000)) {
+		finish = XTmrCtr_GetTimerCounterReg(sys_tmrctr.BaseAddress, 0);
+	}
+
+	encoderStatus = XGpio_DiscreteRead(&enc_gpio, 1);
+
+	if (encoderStatus == 7) {
+		state = S0;
+		encoder_count = 4;
+		QActive_postISR((QActive *)&AO_Lab2A, ENCODER_CLICK);
+	}
+
+	switch (state) {
+
+		case S0: {
+				if (encoder_count == 8 || encoder_count == 0) {
+					encoder_count = 4;
+				}
+			switch(encoderStatus) {
+				case 0b01: {
+					if(encoder_count == 4) {
+						encoder_count = encoder_count + 1;
+						state = S1;
+					}
+					break;
+				}
+				case 0b10: {
+					if(encoder_count == 4) {
+						encoder_count = encoder_count - 1;
+						state = S3;
+					}
+					break;
+				}
+				break;
+			}
+			break;
+		}
+
+		case S1: {
+			switch(encoderStatus) {
+				case 0b11: {
+					if(encoder_count == 1) {
+						encoder_count = encoder_count - 1;
+						state = S0;
+						QActive_postISR((QActive *)&AO_Lab2A, ENCODER_DOWN);
+					}
+					break;
+				}
+				case 0b00: {
+					if(encoder_count == 5) {
+						encoder_count = encoder_count + 1;
+						state = S2;
+					}
+					break;
+				}
+				break;
+			}
+			break;
+		}
+
+		case S2: {
+			switch(encoderStatus) {
+				case 0b01: {
+					if (encoder_count == 2) {
+						encoder_count = encoder_count - 1;
+						state = S1;
+					}
+					break;
+				}
+				case 0b10: {
+					if (encoder_count == 6) {
+						encoder_count = encoder_count + 1;
+						state = S3;
+					}
+					break;
+				}
+				break;
+			}
+			break;
+		}
+
+		case S3: {
+			switch(encoderStatus) {
+				case 0b00: {
+					if(encoder_count == 3) {
+						encoder_count = encoder_count - 1;
+						state = S2;
+					}
+					break;
+				}
+				case 0b11: {
+					if(encoder_count == 7) {
+						encoder_count = encoder_count + 1;
+						state = S0;
+						QActive_postISR((QActive *)&AO_Lab2A, ENCODER_UP);
+					}
+					break;
+				}
+				break;
+			}
+			break;
+		}
+		break;
+	}
+	XGpio_InterruptClear(GpioPtr, GPIO_CHANNEL1);	// Clearing interrupt
 }
 
 void debounceTwistInterrupt(){
